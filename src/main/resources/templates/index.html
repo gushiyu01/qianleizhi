@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+
+<header>
+    <link type="text/css" href="bootstrap/bootstrap-3.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="font-awesome-4.7.0/css/font-awesome.min.css">
+</header>
+
+<script src="bootstrap/bootstrap-3.3.7/dist/js/bootstrap.min.js">
+</script>
+<script src="js/jquery.min.js"></script>
+
+<body onload="disconnect()">
+
+
+<div class="panel panel-default">
+    <div class="panel-heading">聊天显示框 <span id="callback" style="color: brown">链接成功后显示共享时间哦！</span></div>
+    <div class="panel-body pre-scrollable" id="div1" style="max-height: 500px; min-height: 500px">
+        <ul class="media-list" id="panel">
+        </ul>
+    </div>
+</div>
+<div class="col-lg-6" id="conn">
+    <div class="input-group">
+        <input type="text" class="form-control" id="name" placeholder="请输入你的名字">
+        <span class="input-group-btn">
+                <button class="btn btn-default" type="button" id="test">连接</button>
+            </span>
+    </div><!-- /input-group -->
+</div><!-- /.col-lg-6 -->
+<br />
+<div class="col-lg-6" id="conn2" style="display: none">
+    <div class="input-group">
+        <input type="text" class="form-control" id="content" placeholder="输入要发送的内容">
+        <span class="input-group-btn">
+                <button class="btn btn-default" type="button" id="send">发送</button>
+                <button class="btn btn-default" type="button" id="close">断开连接</button>
+            </span>
+    </div><!-- /input-group -->
+</div><!-- /.col-lg-6 -->
+</body>
+<script src="js/sockjs.min.js"></script>
+<script src="js/stomp.js"></script>
+<script>
+    var connName;
+    var stompClient = null;
+    $(function () {
+        var height = $(window).height();
+        console.log(height)
+        $("#div1").css("max-height", height * 0.7).css("min-height", height * 0.7);
+
+        $("#test").click(function () {
+            console.log("test")
+            var name = $("#name").val();
+            if (name == null || name == "") {
+                alert("请输入你的名字")
+                return;
+            }
+            connName = name;
+            // $("#panel").append("<h3><p class='text-info'>" + connName + "进入了聊天室 <i class='fa fa-fire' style='color: red'></p></h3>");
+            connect();
+        })
+
+        $("#close").click(function () {
+            sendClose(connName)
+            disconnect()
+        })
+
+        $("#content").bind("keypress", function (event) {
+            console.log(event)
+            if (event.keyCode === 13) {
+                send();
+            }
+            if (event.keyCode === 10) {
+                var conten = $("#content").val()
+                $("#content").val(conten + "<br/>")
+            }
+        })
+        $("#send").click(function () {
+            send();
+        })
+    })
+
+    function send() {
+        if (connName == null || connName == "") {
+            alert("请先连接服务器")
+            $("#conn2").hide()
+            $("#conn").show()
+            return
+        }
+        var content = $("#content").val();
+        sendMessage(content)
+    }
+
+    function changeShow() {
+        var scrollHeight = $('#div1').prop("scrollHeight");
+        $('#div1').scrollTop(scrollHeight, 200);
+    }
+
+    function addLi(name, conten) {
+        console.log(conten)
+        return "<li class='media'><div class='media-right'><a href='#'><img class='media-object' src='image/1.jpeg' width='64px' height='64px'></a></div><div class='media-body'><h4 class='media-heading'>" + name + " <i class='fa fa-address-card-o'></i></h4>" + conten + "</div></li>";
+    }
+
+    function addLi2(conten) {
+        console.log(conten)
+        return "<li class='media'><div class='media-right'><a href='#'><img class='media-object' src='image/2.jpeg' width='64px' height='64px'></a></div><div class='media-body'><h4 class='media-heading'>系统管理员 <i class='fa fa-address-card-o'></i></h4><h3 style='color:red;'>" + conten + "</h3></div></li>";
+    }
+
+    function setConnected(connected) {
+        $("#name").val("")
+        if (connected) {
+            $("#conn").hide()
+            $("#conn2").show()
+        } else {
+
+        }
+    }
+
+    function connect() {
+        var socket = new SockJS('http://localhost:8092/simple');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, function (frame) {
+            setConnected(true);
+            console.log('Connected:' + frame);
+            stompClient.subscribe('/topic/say', function (response) {
+                showResponse(JSON.parse(response.body).responseMessage);
+            });
+            // 另外再注册一下定时任务接受
+            stompClient.subscribe('/topic/callback', function (response) {
+                showCallback(response.body);
+            });
+            // 发送的消息
+            stompClient.subscribe('/topic/message', function (response) {
+                showMessage(response.body);
+            });
+            stompClient.subscribe('/topic/sayBye', function (response) {
+                showClose(JSON.parse(response.body).responseMessage);
+            });
+            stompClient.send("/welcome", {}, JSON.stringify({ 'name': connName }));
+        });
+    }
+
+    function disconnect() {
+        if (stompClient != null) {
+            stompClient.disconnect();
+            showClose("欢迎再来，亲爱的"+connName)
+            $("#conn2").hide()
+            $("#conn").show()
+        }
+        setConnected(false);
+    }
+
+    function sendMessage(message) {
+        stompClient.send("/message", {}, JSON.stringify({ 'name': connName, "message": message }));
+    }
+
+    function sendName(name) {
+        stompClient.send("/welcome", {}, JSON.stringify({ 'name': name }));
+    }
+
+    function sendClose(name){
+        stompClient.send("/sayBye", {}, JSON.stringify({ 'name': name }));
+    }
+
+    function showMessage(message) {
+        console.log(message)
+        var data = JSON.parse(JSON.parse(message).responseMessage);
+        console.log(data)
+        $("#panel").append(addLi(data.name, data.message));
+        $("#content").val("")
+        changeShow();
+    }
+
+    function showClose(message){
+        $("#panel").append(addLi2(message));
+        changeShow();
+    }
+
+    function showResponse(message) {
+        $("#panel").append(addLi2(message));
+        changeShow();
+    }
+    function showCallback(message) {
+        $("#callback").html(message);
+        changeShow();
+    }
+</script>
+
+</html>
